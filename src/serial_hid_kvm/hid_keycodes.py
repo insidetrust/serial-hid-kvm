@@ -155,11 +155,26 @@ def set_layout(layout_name: str, layouts_dir: str | None = None) -> str:
     from .hid_layouts import get_overrides
 
     overrides, source = get_overrides(layout_name, layouts_dir=layouts_dir)
-    merged = dict(_CHAR_MAP)  # fresh copy of base US104
-    merged.update(overrides)
-    _active_char_map = merged
+    _active_char_map = _merge_overrides(overrides)
     _active_layout = layout_name
     return source
+
+
+def _merge_overrides(
+    overrides: dict[str, tuple[int, int] | None],
+) -> dict[str, tuple[int, int]]:
+    """Apply layout overrides to a fresh copy of the base US104 map.
+
+    Overrides set to ``None`` (``null`` in YAML) remove the character, marking
+    it as unsupported in that layout.
+    """
+    merged = dict(_CHAR_MAP)  # fresh copy of base US104
+    for char, mapping in overrides.items():
+        if mapping is None:
+            merged.pop(char, None)
+        else:
+            merged[char] = mapping
+    return merged
 
 
 def get_layout() -> str:
@@ -176,9 +191,7 @@ def build_char_map(layout_name: str, layouts_dir: str | None = None) -> dict[str
     from .hid_layouts import get_overrides
 
     overrides, _source = get_overrides(layout_name, layouts_dir=layouts_dir)
-    merged = dict(_CHAR_MAP)
-    merged.update(overrides)
-    return merged
+    return _merge_overrides(overrides)
 
 
 def char_to_hid(char: str) -> tuple[int, int] | None:

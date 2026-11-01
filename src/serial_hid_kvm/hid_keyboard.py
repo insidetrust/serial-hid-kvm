@@ -4,8 +4,20 @@ import atexit
 import re
 import time
 
-from .hid_keycodes import char_to_hid, modifier_name_to_bit, special_key_to_hid
+from collections.abc import Iterable
+
+from .hid_keycodes import char_to_hid, get_layout, modifier_name_to_bit, special_key_to_hid
 from .hid_protocol import CH9329
+
+
+def _unsupported(ch: str) -> ValueError:
+    """Build the error for a character the active layout cannot type."""
+    return ValueError(
+        f"Unsupported character: {ch!r} (U+{ord(ch):04X}) in target layout "
+        f"{get_layout()!r}. Nothing was typed. "
+        "Only ASCII printable characters mapped by the layout are supported. "
+        "For unsupported characters or binary data, use base64 encoding."
+    )
 
 
 class Keyboard:
@@ -66,15 +78,14 @@ class Keyboard:
         if raw:
             # Handle all line ending conventions: CRLF, CR, LF
             segments = re.split(r'\r\n|\r|\n', text)
+            # Validate everything BEFORE sending any key, so an unsupported
+            # character never leaves a half-typed command on the target.
+            self._check_mappable(ch for segment in segments for ch in segment)
             for idx, segment in enumerate(segments):
                 for ch in segment:
                     mapping = char_to_hid(ch)
                     if mapping is None:
-                        raise ValueError(
-                            f"Unsupported character: {ch!r} (U+{ord(ch):04X}). "
-                            "Only ASCII printable characters are supported. "
-                            "For unsupported characters or binary data, use base64 encoding."
-                        )
+                        raise _unsupported(ch)
                     modifier, keycode = mapping
                     self._dev.send_keyboard(modifier, keycode)
                     if delay > 0:
@@ -83,7 +94,10 @@ class Keyboard:
                     self._send_tag("enter", delay)
             return
 
-        for token in self._tokenize(text):
+        tokens = self._tokenize(text)
+        # Validate all plain characters before sending any key (see raw mode).
+        self._check_mappable(t for t in tokens if not t.startswith("\x01"))
+        for token in tokens:
             if token.startswith("\x01"):
                 # Tag token — strip sentinel and dispatch
                 self._send_tag(token[1:], delay)
@@ -91,15 +105,21 @@ class Keyboard:
                 # Plain character
                 mapping = char_to_hid(token)
                 if mapping is None:
-                    raise ValueError(
-                        f"Unsupported character: {token!r} (U+{ord(token):04X}). "
-                        "Only ASCII printable characters are supported. "
-                        "For unsupported characters or binary data, use base64 encoding."
-                    )
+                    raise _unsupported(token)
                 modifier, keycode = mapping
                 self._dev.send_keyboard(modifier, keycode)
                 if delay > 0:
                     time.sleep(delay)
+
+    @staticmethod
+    def _check_mappable(chars: Iterable[str]) -> None:
+        """Raise ValueError if any character has no mapping in the active layout.
+
+        Called before any key is sent, so a rejected string types nothing.
+        """
+        for ch in chars:
+            if char_to_hid(ch) is None:
+                raise _unsupported(ch)
 
     @staticmethod
     def _is_valid_tag(tag: str) -> bool:

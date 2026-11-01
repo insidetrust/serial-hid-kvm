@@ -26,6 +26,21 @@ Each entry maps a character to a `[modifier, keycode]` pair:
 - **modifier**: Which modifier key(s) to hold — `none`, `shift`, `ralt`, `ctrl`, `shift+ralt`, etc.
 - **hid_keycode**: The physical key's USB HID keycode in hex (e.g., `0x1F`)
 
+### Marking a character as unsupported (`null`)
+
+Set a character to `null` to **remove** it from the layout:
+
+```yaml
+overrides:
+  '~': null    # no reliable key on this layout — refuse rather than guess
+```
+
+Typing a `null` character raises `Unsupported character ... Nothing was typed`.
+`type_text` validates the **whole** string before sending any key, so a rejected
+command never leaves a half-typed fragment on the target. Use this when a
+character's key position is uncertain. Failing closed is safer than typing the
+wrong character into a shell.
+
 ### Modifier Names
 
 | Name | Bitmask | Notes |
@@ -129,6 +144,7 @@ Study the built-in layouts in this directory for examples:
 | `us104.yaml` | US ANSI (base) | No overrides (empty) |
 | `jp106.yaml` | Japanese JIS | Number row symbols, `@`/`[`/`]` positions, JIS ro/yen keys |
 | `uk105.yaml` | UK ISO | `"` and `@` swapped, `#` on Non-US key |
+| `mac-gb.yaml` | macOS "British" input source | `#` = Option+3 (Shift+3 is `£`); `` ` `` and `~` `null` (keyboard-type dependent) |
 | `de105.yaml` | German QWERTZ | Y/Z swapped, umlauts, AltGr symbols |
 | `fr105.yaml` | French AZERTY | Extensively remapped letter and symbol positions |
 

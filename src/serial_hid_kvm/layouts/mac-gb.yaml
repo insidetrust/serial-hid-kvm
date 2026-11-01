@@ -1,0 +1,30 @@
+# mac-gb.yaml - macOS "British" input source (Apple UK layout)
+# For Mac targets whose input source is "British" (the macOS default in the UK).
+#
+# NOT the same as PC UK (uk105.yaml). On Apple British, @ and " stay on their
+# US positions (Shift+2 and Shift+'); Shift+3 types £, so # moves to Option+3.
+#
+# Format: character: [modifier, hid_keycode]   or   character: null (unsupported)
+# Only characters that differ from US104 need to be listed.
+#
+# Bench-verify on the target before audit use: type the smoke-test string
+#   abc ABC 0123456789 @"#/\|-_=+:;,.?!()[]{}<>'
+# and compare it on screen.
+
+overrides:
+  # Shift+3 is £ on Apple British; # is Option(= Left Alt)+3.
+  '#': [alt, 0x20]
+
+  # Explicitly UNSUPPORTED (fail closed). On ISO Macs the top-left key (§ ±)
+  # and the key left of Z (` ~) swap HID usages 0x35 / 0x64 depending on the
+  # keyboard type chosen in Keyboard Setup Assistant (ISO vs ANSI). A fixed
+  # keycode would type § or ± on some machines. Re-enable only after
+  # bench-verifying the target's keyboard type.
+  '`': null
+  '~': null
+
+  # Unchanged from US104 on Apple British (no override needed):
+  #   @ = Shift+2    " = Shift+'    \ and | = backslash key    all letters,
+  #   digits and remaining punctuation.
+  # Not typable at all (non-ASCII, rejected by validate_chars):
+  #   £ (Shift+3), € (Option+2), § ± (keyboard-type dependent).

@@ -54,16 +54,28 @@ def _parse_keycode(val: int | str) -> int:
     return int(val)
 
 
-def _load_yaml(filepath: str | Path) -> dict[str, tuple[int, int]]:
-    """Parse a layout YAML file and return the overrides dict."""
+def _load_yaml(filepath: str | Path) -> dict[str, tuple[int, int] | None]:
+    """Parse a layout YAML file and return the overrides dict.
+
+    A ``null`` mapping (``'~': null``) marks the character as explicitly
+    unsupported in this layout: it is removed from the merged character map,
+    so typing it raises instead of sending a possibly-wrong key.
+    """
     with open(filepath, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
 
     overrides_raw: dict = data.get("overrides") or {}
-    result: dict[str, tuple[int, int]] = {}
+    result: dict[str, tuple[int, int] | None] = {}
 
     for char, mapping in overrides_raw.items():
         char = str(char)
+        if mapping is None:
+            result[char] = None
+            continue
+        if not isinstance(mapping, (list, tuple)) or len(mapping) != 2:
+            raise ValueError(
+                f"{filepath}: mapping for {char!r} must be [modifier, keycode] or null"
+            )
         modifier_name = str(mapping[0])
         keycode_raw = mapping[1]
         result[char] = (_parse_modifier(modifier_name), _parse_keycode(keycode_raw))
@@ -98,7 +110,9 @@ def _discover_builtin_layouts() -> list[str]:
 SUPPORTED_LAYOUTS = _discover_builtin_layouts()
 
 
-def get_overrides(layout_name: str, layouts_dir: str | None = None) -> tuple[dict[str, tuple[int, int]], str]:
+def get_overrides(
+    layout_name: str, layouts_dir: str | None = None,
+) -> tuple[dict[str, tuple[int, int] | None], str]:
     """Load layout overrides from YAML file.
 
     Returns (overrides_dict, source_description).
