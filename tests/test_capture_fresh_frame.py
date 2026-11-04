@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from serial_hid_kvm import capture
+from serial_hid_kvm.config import Config
 from serial_hid_kvm.server import ApiDispatcher
 
 
@@ -95,7 +96,7 @@ def test_api_capture_frame_waits_for_fresh_frame():
     cap.get_frame_jpeg.return_value = (b"\xff\xd8jpeg", 1280, 720)
     hw = Mock()
     hw.get_capture.return_value = cap
-    dispatcher = ApiDispatcher(hw, Mock())
+    dispatcher = ApiDispatcher(hw, Config())
 
     result = dispatcher._do_capture_frame({})
 
@@ -108,7 +109,7 @@ def test_api_capture_frame_errors_instead_of_returning_stale_frame():
     cap.wait_for_fresh_frame.return_value = False
     hw = Mock()
     hw.get_capture.return_value = cap
-    dispatcher = ApiDispatcher(hw, Mock())
+    dispatcher = ApiDispatcher(hw, Config())
 
     with pytest.raises(RuntimeError, match="No fresh frame"):
         dispatcher._do_capture_frame({})

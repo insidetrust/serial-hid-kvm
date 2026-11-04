@@ -26,6 +26,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 
 from .config import Config, load_config
 from .serial_detect import auto_detect_port
@@ -118,12 +119,20 @@ class KvmHardware:
 # ApiDispatcher — JSON request → hardware call
 # ---------------------------------------------------------------------------
 
+# API methods that send input to the target (they reset the capture settle timer).
+INPUT_METHODS = frozenset({
+    "type_text", "send_key", "send_key_sequence",
+    "mouse_move", "mouse_click", "mouse_down", "mouse_up", "mouse_scroll",
+})
+
+
 class ApiDispatcher:
     """Dispatch JSON RPC-style requests to KvmHardware methods."""
 
     def __init__(self, hardware: KvmHardware, config: Config):
         self._hw = hardware
         self._config = config
+        self._last_input = 0.0  # time.monotonic() when the last input finished
 
     async def dispatch(self, method: str, params: dict) -> dict:
         """Execute *method* with *params* and return a result dict.
@@ -134,7 +143,19 @@ class ApiDispatcher:
         handler = getattr(self, f"_do_{method}", None)
         if handler is None:
             raise ValueError(f"Unknown method: {method}")
-        return await loop.run_in_executor(None, handler, params)
+        try:
+            return await loop.run_in_executor(None, handler, params)
+        finally:
+            # Also on error: some input may have reached the target.
+            if method in INPUT_METHODS:
+                self._last_input = time.monotonic()
+
+    def _wait_for_settle(self):
+        """Sleep until capture_settle_ms has passed since the last input."""
+        settle = max(0, self._config.capture_settle_ms) / 1000.0
+        remaining = self._last_input + settle - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
 
     # -- method handlers (run in thread pool) --------------------------------
 
@@ -264,6 +285,9 @@ class ApiDispatcher:
     def _do_capture_frame(self, params: dict) -> dict:
         quality = params.get("quality", 85)
         cap = self._hw.get_capture()
+        # Let the target react to the last input (capture card and redraw
+        # latency), so a capture sent straight after an action shows its result.
+        self._wait_for_settle()
         # Always return a frame read after this request. In headless mode no
         # viewer runs the capture thread, and an on-demand read returns an old
         # queued frame (the screen as it was one or more actions ago).
@@ -464,6 +488,9 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="Capture resolution height (default: 1080)")
     parser.add_argument("--capture-fourcc", type=str, metavar="CODE",
                         help="Capture FOURCC code (default: MJPG)")
+    parser.add_argument("--capture-settle-ms", type=int, metavar="MS",
+                        help="Wait after the last input before an API capture"
+                             " (default: 150, 0 = off)")
     parser.add_argument("--no-autocrop", action="store_true",
                         help="Disable automatic black border cropping")
 

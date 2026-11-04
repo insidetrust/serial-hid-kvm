@@ -35,6 +35,9 @@ class Config:
         self.capture_width: int = 1920
         self.capture_height: int = 1080
         self.capture_fourcc: str = "MJPG"
+        # Wait this long after the last keyboard/mouse input before an API
+        # capture, so the frame shows the target's response (0 = off).
+        self.capture_settle_ms: int = 150
 
         # Keyboard layout
         self.target_layout: str = "us104"
@@ -77,6 +80,7 @@ _FILE_KEYS = {
     "serial_port", "serial_baud",
     "screen_width", "screen_height",
     "capture_device", "capture_width", "capture_height", "capture_fourcc",
+    "capture_settle_ms",
     "target_layout", "host_layout", "layouts_dir",
     "mouse_button_mode", "preview_keyboard",
     "api_enabled", "api_host", "api_port",
@@ -140,6 +144,7 @@ _ENV_MAP = {
     "SHKVM_CAPTURE_WIDTH": "capture_width",
     "SHKVM_CAPTURE_HEIGHT": "capture_height",
     "SHKVM_CAPTURE_FOURCC": "capture_fourcc",
+    "SHKVM_CAPTURE_SETTLE_MS": "capture_settle_ms",
     "SHKVM_TARGET_LAYOUT": "target_layout",
     "SHKVM_HOST_LAYOUT": "host_layout",
     "SHKVM_LAYOUTS_DIR": "layouts_dir",
@@ -195,6 +200,7 @@ def _apply_args(config: Config, args):
         "capture_width": "capture_width",
         "capture_height": "capture_height",
         "capture_fourcc": "capture_fourcc",
+        "capture_settle_ms": "capture_settle_ms",
         "target_layout": "target_layout",
         "host_layout": "host_layout",
         "layouts_dir": "layouts_dir",
