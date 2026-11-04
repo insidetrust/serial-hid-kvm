@@ -264,6 +264,11 @@ class ApiDispatcher:
     def _do_capture_frame(self, params: dict) -> dict:
         quality = params.get("quality", 85)
         cap = self._hw.get_capture()
+        # Always return a frame read after this request. In headless mode no
+        # viewer runs the capture thread, and an on-demand read returns an old
+        # queued frame (the screen as it was one or more actions ago).
+        if not cap.wait_for_fresh_frame():
+            raise RuntimeError("No fresh frame from capture device within 2 s")
         result = cap.get_frame_jpeg(quality)
         if result is None:
             # Fall back to single-shot capture

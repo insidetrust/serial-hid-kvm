@@ -21,6 +21,10 @@ _AUTOCROP_MIN_BORDER = 4      # minimum border pixels to trigger crop
 _AUTOCROP_MIN_CONTENT = 64    # minimum content pixels in each dimension
 
 
+# Frames discarded after the capture thread starts (stale/corrupt start-up frames).
+WARMUP_FRAMES = 3
+
+
 def _detect_crop_rect(frame: np.ndarray) -> tuple[int, int, int, int] | None:
     """Detect black borders around the content area of a BGR frame.
 
@@ -276,6 +280,11 @@ class ScreenCapture:
         self._lock = threading.Lock()
         self._latest_frame: np.ndarray | None = None
         self._running = False
+        # Fresh-frame tracking: time each frame was published, so callers can
+        # wait for a frame read after their request (see wait_for_fresh_frame).
+        self._frame_cond = threading.Condition()
+        self._frame_time: float = 0.0
+        self._warmup_left = 0
 
     def _open_device(self):
         """Open the capture device and apply requested resolution."""
@@ -367,6 +376,7 @@ class ScreenCapture:
             return
         self._ensure_open()
         self._running = True
+        self._warmup_left = WARMUP_FRAMES
         self._thread = threading.Thread(target=self._capture_loop, daemon=True)
         self._thread.start()
         logger.info("Capture thread started")
@@ -402,6 +412,12 @@ class ScreenCapture:
             else:
                 frame_bgr = frame
 
+            # The first frames after opening can be stale or corrupt
+            # (seen on MSMF), so never publish them.
+            if self._warmup_left > 0:
+                self._warmup_left -= 1
+                continue
+
             # Auto-crop: detect black borders periodically
             if self._autocrop:
                 self._crop_frame_counter += 1
@@ -431,7 +447,28 @@ class ScreenCapture:
             else:
                 self._latest_frame = frame_bgr.copy()
 
+            with self._frame_cond:
+                self._frame_time = time.monotonic()
+                self._frame_cond.notify_all()
+
             time.sleep(0.016)  # ~60fps cap
+
+    def wait_for_fresh_frame(self, timeout: float = 2.0) -> bool:
+        """Block until the capture thread publishes a frame read after this call.
+
+        Starts the capture thread if needed. Without a thread that reads
+        continuously, backends such as MSMF queue frames and an on-demand
+        read() returns the oldest queued one, i.e. what the screen showed
+        one or more actions ago.
+
+        Returns:
+            True if a fresh frame is available, False on timeout.
+        """
+        self.start_capture_thread()
+        requested = time.monotonic()
+        with self._frame_cond:
+            return self._frame_cond.wait_for(
+                lambda: self._frame_time > requested, timeout)
 
     def get_latest_frame(self) -> np.ndarray | None:
         """Return the latest captured BGR frame, or None if not available."""
@@ -466,20 +503,16 @@ class ScreenCapture:
         return (buf.tobytes(), w, h)
 
     def capture(self) -> Image.Image:
-        """Capture a single frame.
+        """Capture a single frame showing the screen as it is now.
 
-        If the capture thread is running, returns the latest frame.
-        Otherwise reads directly from the device.
+        Waits for the capture thread (started if needed) to publish a frame
+        read after this call, so the result is never a stale queued frame.
         """
-        if self._running and self._latest_frame is not None:
-            frame = self._latest_frame.copy()
-        else:
-            self._ensure_open()
-            assert self._cap is not None
-            with self._lock:
-                ret, frame = self._cap.read()
-            if not ret or frame is None:
-                raise RuntimeError("Failed to capture frame from device")
+        if not self.wait_for_fresh_frame():
+            raise RuntimeError("No fresh frame from capture device")
+        frame = self.get_latest_frame()
+        if frame is None:
+            raise RuntimeError("Failed to capture frame from device")
 
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         return Image.fromarray(frame_rgb)
